@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
 
       # Step 2 — 從 Cortex Cloud 下載最新的 CLI
-      # API base URL 依據你的 region 而不同（ex: app.sg.prismacloud.io）
+      # API base URL 依據你的 region 而不同
       - name: Download Cortex CLI
         run: |
           curl -L -o cortexcli \
