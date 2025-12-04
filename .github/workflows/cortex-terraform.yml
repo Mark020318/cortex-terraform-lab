@@ -1,0 +1,34 @@
+name: Cortex Terraform Scan
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    env:
+      CORTEX_API_KEY_ID: ${{ secrets.CORTEX_API_KEY_ID }}
+      CORTEX_API_KEY_SECRET: ${{ secrets.CORTEX_API_KEY_SECRET }}
+      CORTEX_API_BASE_URL: ${{ secrets.CORTEX_API_BASE_URL }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Cortex CLI
+        run: |
+          curl -L -o cortexcli \
+            "$CORTEX_API_BASE_URL/public_api/v1/cli/releases/download-link?os=linux&architecture=amd64"
+          chmod +x cortexcli
+
+      - name: Run Terraform Scan
+        run: |
+          ./cortexcli code scan \
+            --directory . \
+            --repo-id "${{ github.repository }}" \
+            --branch "${{ github.ref_name }}" \
+            --upload-mode upload \
+            --output sarif \
+            --output-file-path result.sarif
