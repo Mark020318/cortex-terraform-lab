@@ -32,15 +32,18 @@ jobs:
       # Step 3 — 執行 Terraform 審查掃描
       - name: Run Terraform Scan
         run: |
+          # 連到對應 region 的 Cortex Cloud，使用 GitHub Secrets 的 API key 做認證
           ./cortexcli \
-            --api-base-url "$CORTEX_API_BASE_URL" \    # 告訴 CLI 要連到哪個 Cortex Cloud
-            --api-key "$CORTEX_API_KEY" \              # 認證（來自 GitHub Secrets）
-            --api-key-id "$CORTEX_API_KEY_ID" \        # 認證（來自 GitHub Secrets）
-            code scan \                                # 執行 Application Security → Code Scan
-            --directory . \                            # 掃描整個 Repo（. 為當前目錄）
-            --framework terraform \                    # 限制只掃描 Terraform 資源
-            --repo-id "${{ github.repository }}" \     # ex: org/repo，讓結果回傳到 Cortex
-            --branch "${{ github.ref_name }}" \        # ex: main / feature-xxx
-            --upload-mode upload \                     # 將結果送回 Cortex Cloud Dashboard
-            --output sarif \                           # 同時輸出 SARIF 讓 GitHub 可解析
-            --output-file-path result.sarif            # SARIF report 的檔案名稱
+            --api-base-url "$CORTEX_API_BASE_URL" \
+            --api-key "$CORTEX_API_KEY" \
+            --api-key-id "$CORTEX_API_KEY_ID" \
+            # 只掃描 Terraform (.tf) ，結果上傳回 Cortex Cloud + 輸出 SARIF 給 GitHub
+            code scan \
+            --directory . \
+            --framework terraform \
+            --repo-id "${{ github.repository }}" \
+            --branch "${{ github.ref_name }}" \
+            --upload-mode upload \
+            --output sarif \
+            --output-file-path result.sarif
+
