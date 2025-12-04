@@ -37,7 +37,6 @@ jobs:
             --api-base-url "$CORTEX_API_BASE_URL" \
             --api-key "$CORTEX_API_KEY" \
             --api-key-id "$CORTEX_API_KEY_ID" \
-            # 只掃描 Terraform (.tf) ，結果上傳回 Cortex Cloud + 輸出 SARIF 給 GitHub
             code scan \
             --directory . \
             --framework terraform \
@@ -46,4 +45,5 @@ jobs:
             --upload-mode upload \
             --output sarif \
             --output-file-path result.sarif
+
 
