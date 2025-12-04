@@ -1,34 +1,46 @@
-name: Cortex Terraform Scan
+name: Cortex Terraform Scan   # GitHub Actions workflow 的名稱
 
+# 觸發條件：只要有人 push 或建立 Pull Request 就會自動掃描
 on:
   push:
   pull_request:
 
 jobs:
   scan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest     # 使用 GitHub 官方的 Ubuntu Runner
 
     env:
+      #【重要】把 Cortex Cloud 的 API Key 放在 GitHub Secrets，避免外洩
+      # Secrets 需要由你在 Repo → Settings → Secrets → Actions 裡建立
       CORTEX_API_KEY_ID: ${{ secrets.CORTEX_API_KEY_ID }}
-      CORTEX_API_KEY_SECRET: ${{ secrets.CORTEX_API_KEY_SECRET }}
-      CORTEX_API_BASE_URL: ${{ secrets.CORTEX_API_BASE_URL }}
+      CORTEX_API_KEY: ${{ secrets.CORTEX_API_KEY }}
+      CORTEX_API_BASE_URL: ${{ secrets.CORTEX_API_BASE_URL }}  # 例如 https://app.sg.prismacloud.io
 
     steps:
+      # Step 1 — Checkout Repo 內容到 Runner
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Step 2 — 從 Cortex Cloud 下載最新的 CLI
+      # API base URL 依據你的 region 而不同（ex: app.sg.prismacloud.io）
       - name: Download Cortex CLI
         run: |
           curl -L -o cortexcli \
             "$CORTEX_API_BASE_URL/public_api/v1/cli/releases/download-link?os=linux&architecture=amd64"
-          chmod +x cortexcli
+          chmod +x cortexcli   # 加執行權限
 
+      # Step 3 — 執行 Terraform 審查掃描
       - name: Run Terraform Scan
         run: |
-          ./cortexcli code scan \
-            --directory . \
-            --repo-id "${{ github.repository }}" \
-            --branch "${{ github.ref_name }}" \
-            --upload-mode upload \
-            --output sarif \
-            --output-file-path result.sarif
+          ./cortexcli \
+            --api-base-url "$CORTEX_API_BASE_URL" \    # 告訴 CLI 要連到哪個 Cortex Cloud
+            --api-key "$CORTEX_API_KEY" \              # 認證（來自 GitHub Secrets）
+            --api-key-id "$CORTEX_API_KEY_ID" \        # 認證（來自 GitHub Secrets）
+            code scan \                                # 執行 Application Security → Code Scan
+            --directory . \                            # 掃描整個 Repo（. 為當前目錄）
+            --framework terraform \                    # 限制只掃描 Terraform 資源
+            --repo-id "${{ github.repository }}" \     # ex: org/repo，讓結果回傳到 Cortex
+            --branch "${{ github.ref_name }}" \        # ex: main / feature-xxx
+            --upload-mode upload \                     # 將結果送回 Cortex Cloud Dashboard
+            --output sarif \                           # 同時輸出 SARIF 讓 GitHub 可解析
+            --output-file-path result.sarif            # SARIF report 的檔案名稱
