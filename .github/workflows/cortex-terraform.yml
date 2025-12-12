@@ -1,6 +1,6 @@
 name: Cortex Terraform Scan   # GitHub Actions workflow 的名稱
 
-# 觸發條件：只要有人 push 或建立 Pull Request 就會自動掃描
+# 觸發條件：有人 push 或建立 Pull Request 就會自動掃描
 on:
   push:
   pull_request:
@@ -9,9 +9,14 @@ jobs:
   scan:
     runs-on: ubuntu-latest     # 使用 GitHub 官方的 Ubuntu Runner
 
+    # 上傳 SARIF 到 GitHub Security 需要這個權限
+    permissions:
+      contents: read
+      security-events: write
+
     env:
-      # 把 Cortex Cloud 的 API Key 放在 GitHub Secrets，避免外洩
-      # Secrets 需要由你在 Repo → Settings → Secrets → Actions 裡建立
+      #【重要】Cortex Cloud 的 API Key 放在 GitHub Secrets
+      # 在 Repo → Settings → Secrets and variables → Actions 裡建立
       CORTEX_API_KEY_ID: ${{ secrets.CORTEX_API_KEY_ID }}
       CORTEX_API_KEY: ${{ secrets.CORTEX_API_KEY }}
       CORTEX_API_BASE_URL: ${{ secrets.CORTEX_API_BASE_URL }}  # 例如 https://app.sg.prismacloud.io
@@ -22,17 +27,15 @@ jobs:
         uses: actions/checkout@v4
 
       # Step 2 — 從 Cortex Cloud 下載最新的 CLI
-      # API base URL 依據你的 region 而不同
       - name: Download Cortex CLI
         run: |
           curl -L -o cortexcli \
             "$CORTEX_API_BASE_URL/public_api/v1/cli/releases/download-link?os=linux&architecture=amd64"
           chmod +x cortexcli   # 加執行權限
 
-      # Step 3 — 執行 Terraform 審查掃描
-      - name: Run Terraform Scan
+      # Step 3 — 執行 Terraform 審查掃描，結果上傳到 Cortex ＋ 輸出 SARIF
+      - name: Run Cortex Terraform Scan
         run: |
-          # 連到對應 region 的 Cortex Cloud，使用 GitHub Secrets 的 API key 做認證
           ./cortexcli \
             --api-base-url "$CORTEX_API_BASE_URL" \
             --api-key "$CORTEX_API_KEY" \
@@ -42,8 +45,13 @@ jobs:
             --framework terraform \
             --repo-id "${{ github.repository }}" \
             --branch "${{ github.ref_name }}" \
+            --source "GITHUB_ACTIONS" \
             --upload-mode upload \
             --output sarif \
             --output-file-path result.sarif
 
-
+      # Step 4 — 把 SARIF 上傳到 GitHub Code Scanning（Security tab 裡會看到結果）
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: result.sarif
