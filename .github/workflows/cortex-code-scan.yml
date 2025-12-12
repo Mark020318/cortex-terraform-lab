@@ -8,9 +8,10 @@ on:
   workflow_dispatch:
 
 env:
-  CORTEX_API_KEY: ${{ secrets.CORTEX_API_KEY }}
+  # 對應你現在的 Repository secrets
   CORTEX_API_KEY_ID: ${{ secrets.CORTEX_API_KEY_ID }}
-  CORTEX_API_URL: ${{ secrets.CORTEX_API_URL }}   # 建議把 URL 也放 secrets
+  CORTEX_API_KEY: ${{ secrets.CORTEX_API_KEY_SECRET }}
+  CORTEX_API_URL: ${{ secrets.CORTEX_API_BASE_URL }}
 
 jobs:
   cortex-code-scan:
@@ -35,6 +36,12 @@ jobs:
       - name: Download cortexcli
         run: |
           set -eux
+
+          if [ -z "$CORTEX_API_URL" ]; then
+            echo "ERROR: CORTEX_API_URL is empty. Check secrets.CORTEX_API_BASE_URL"
+            exit 1
+          fi
+
           crtx_resp=$(curl "${CORTEX_API_URL}/public_api/v1/unified-cli/releases/download-link?os=linux&architecture=amd64" \
             -H "x-xdr-auth-id: ${CORTEX_API_KEY_ID}" \
             -H "Authorization: ${CORTEX_API_KEY}")
@@ -47,7 +54,6 @@ jobs:
         run: |
           set -eux
 
-          # 用絕對路徑存 SARIF，避免路徑搞混
           OUTPUT_PATH="${{ github.workspace }}/result.sarif"
 
           ./cortexcli \
@@ -64,10 +70,7 @@ jobs:
             --output sarif \
             --output-file-path "$OUTPUT_PATH"
 
-          echo "== workspace content =="
           ls -al "${{ github.workspace }}"
-
-          # 確認檔案真的存在，不存在就直接讓這個 step fail
           if [ ! -f "$OUTPUT_PATH" ]; then
             echo "ERROR: Cortex CLI 沒有產生 SARIF 檔案：$OUTPUT_PATH"
             exit 1
