@@ -1,40 +1,33 @@
-name: Cortex Terraform Scan   # GitHub Actions workflow 的名稱
+name: Cortex Code Scan
 
-# 觸發條件：有人 push 或建立 Pull Request 就會自動掃描
 on:
   push:
   pull_request:
 
 jobs:
   scan:
-    runs-on: ubuntu-latest     # 使用 GitHub 官方的 Ubuntu Runner
+    runs-on: ubuntu-latest
 
-    # 上傳 SARIF 到 GitHub Security 需要這個權限
     permissions:
       contents: read
       security-events: write
 
     env:
-      #【重要】Cortex Cloud 的 API Key 放在 GitHub Secrets
-      # 在 Repo → Settings → Secrets and variables → Actions 裡建立
       CORTEX_API_KEY_ID: ${{ secrets.CORTEX_API_KEY_ID }}
       CORTEX_API_KEY: ${{ secrets.CORTEX_API_KEY }}
-      CORTEX_API_BASE_URL: ${{ secrets.CORTEX_API_BASE_URL }}  # 例如 https://app.sg.prismacloud.io
+      CORTEX_API_BASE_URL: ${{ secrets.CORTEX_API_BASE_URL }}
 
     steps:
-      # Step 1 — Checkout Repo 內容到 Runner
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2 — 從 Cortex Cloud 下載最新的 CLI
       - name: Download Cortex CLI
         run: |
           curl -L -o cortexcli \
             "$CORTEX_API_BASE_URL/public_api/v1/cli/releases/download-link?os=linux&architecture=amd64"
-          chmod +x cortexcli   # 加執行權限
+          chmod +x cortexcli
 
-      # Step 3 — 執行 Terraform 審查掃描，結果上傳到 Cortex ＋ 輸出 SARIF
-      - name: Run Cortex Terraform Scan
+      - name: Run Cortex Scan
         run: |
           ./cortexcli \
             --api-base-url "$CORTEX_API_BASE_URL" \
@@ -42,7 +35,6 @@ jobs:
             --api-key-id "$CORTEX_API_KEY_ID" \
             code scan \
             --directory . \
-            --framework terraform \
             --repo-id "${{ github.repository }}" \
             --branch "${{ github.ref_name }}" \
             --source "GITHUB_ACTIONS" \
@@ -50,7 +42,6 @@ jobs:
             --output sarif \
             --output-file-path result.sarif
 
-      # Step 4 — 把 SARIF 上傳到 GitHub Code Scanning（Security tab 裡會看到結果）
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         with:
