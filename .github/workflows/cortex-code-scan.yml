@@ -1,4 +1,4 @@
-name: Cortex CLI Code Scan
+name: Cortex CLI Code Scan (Changed Files Only)
 
 on:
   push:
@@ -8,7 +8,6 @@ on:
   workflow_dispatch:
 
 env:
-  # 對應你現在的 Repository secrets
   CORTEX_API_KEY_ID: ${{ secrets.CORTEX_API_KEY_ID }}
   CORTEX_API_KEY: ${{ secrets.CORTEX_API_KEY_SECRET }}
   CORTEX_API_URL: ${{ secrets.CORTEX_API_BASE_URL }}
@@ -24,33 +23,64 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
         with:
-          node-version: 22
+          fetch-depth: 0   # ⚠️ 很重要，diff 才抓得到 base
 
-      - name: Verify Node.js Version
-        run: node -v
+      - name: Collect changed files
+        id: changes
+        run: |
+          set -eux
+
+          if [ -n "${{ github.base_ref }}" ]; then
+            echo "PR event detected"
+            git fetch origin "${{ github.base_ref }}"
+            RANGE="origin/${{ github.base_ref }}...HEAD"
+          else
+            echo "Push event detected"
+            RANGE="HEAD~1...HEAD"
+          fi
+
+          git diff --name-only $RANGE > changed_files.txt
+
+          echo "Changed files:"
+          cat changed_files.txt
+
+          if [ ! -s changed_files.txt ]; then
+            echo "No changed files detected, exiting."
+            exit 0
+          fi
+
+      - name: Prepare scan directory (changed files only)
+        run: |
+          set -eux
+
+          SCAN_DIR="${{ github.workspace }}/changed-scan"
+          mkdir -p "$SCAN_DIR"
+
+          while read -r file; do
+            if [ -f "$file" ]; then
+              mkdir -p "$SCAN_DIR/$(dirname "$file")"
+              cp "$file" "$SCAN_DIR/$file"
+            fi
+          done < changed_files.txt
+
+          echo "Files prepared for scan:"
+          find "$SCAN_DIR" -type f
 
       - name: Download cortexcli
         run: |
           set -eux
 
-          if [ -z "$CORTEX_API_URL" ]; then
-            echo "ERROR: CORTEX_API_URL is empty. Check secrets.CORTEX_API_BASE_URL"
-            exit 1
-          fi
-
           crtx_resp=$(curl "${CORTEX_API_URL}/public_api/v1/unified-cli/releases/download-link?os=linux&architecture=amd64" \
             -H "x-xdr-auth-id: ${CORTEX_API_KEY_ID}" \
             -H "Authorization: ${CORTEX_API_KEY}")
+
           crtx_url=$(echo "$crtx_resp" | jq -r ".signed_url")
           curl -o cortexcli "$crtx_url"
           chmod +x cortexcli
           ./cortexcli --version
 
-      - name: Run Cortex CLI Code Scan
+      - name: Run Cortex CLI Code Scan (changed files)
         run: |
           set -eux
 
@@ -61,7 +91,7 @@ jobs:
             --api-key "${CORTEX_API_KEY}" \
             --api-key-id "${CORTEX_API_KEY_ID}" \
             code scan \
-            --directory "${{ github.workspace }}" \
+            --directory "${{ github.workspace }}/changed-scan" \
             --repo-id "${{ github.repository }}" \
             --branch "${{ github.ref_name }}" \
             --source "GITHUB_ACTIONS" \
@@ -71,10 +101,7 @@ jobs:
             --output-file-path "$OUTPUT_PATH"
 
           ls -al "${{ github.workspace }}"
-          if [ ! -f "$OUTPUT_PATH" ]; then
-            echo "ERROR: Cortex CLI 沒有產生 SARIF 檔案：$OUTPUT_PATH"
-            exit 1
-          fi
+          test -f "$OUTPUT_PATH"
 
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
