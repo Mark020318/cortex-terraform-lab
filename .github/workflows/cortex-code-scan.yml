@@ -1,4 +1,4 @@
-name: Cortex CLI Code Scan (Changed Files Only)
+name: Cortex CLI Code Scan (changed files only)
 
 on:
   push:
@@ -18,69 +18,102 @@ jobs:
 
     permissions:
       contents: read
+      pull-requests: read
       security-events: write
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # ⚠️ 很重要，diff 才抓得到 base
+          fetch-depth: 0   # 必須，否則抓不到 diff
 
+      - name: Install jq
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      # 🔹 依事件類型收集「變動檔案清單」
       - name: Collect changed files
         id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -eux
 
-          if [ -n "${{ github.base_ref }}" ]; then
+          mkdir -p _cortex_changed
+          rm -f changed_files.txt
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "PR event detected"
-            git fetch origin "${{ github.base_ref }}"
-            RANGE="origin/${{ github.base_ref }}...HEAD"
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            OWNER_REPO="${{ github.repository }}"
+
+            page=1
+            while true; do
+              resp=$(curl -sS -H "Authorization: Bearer ${GH_TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${OWNER_REPO}/pulls/${PR_NUMBER}/files?per_page=100&page=${page}")
+
+              count=$(echo "$resp" | jq 'length')
+              [ "$count" -eq 0 ] && break
+
+              echo "$resp" | jq -r '.[].filename' >> changed_files.txt
+              page=$((page+1))
+            done
+
           else
-            echo "Push event detected"
-            RANGE="HEAD~1...HEAD"
+            echo "Push / manual event detected"
+
+            if git rev-parse HEAD~1 >/dev/null 2>&1; then
+              git diff --name-only HEAD~1 HEAD > changed_files.txt
+            else
+              git ls-files > changed_files.txt
+            fi
           fi
 
-          git diff --name-only $RANGE > changed_files.txt
-
+          sort -u changed_files.txt -o changed_files.txt || true
           echo "Changed files:"
-          cat changed_files.txt
+          cat changed_files.txt || true
 
-          if [ ! -s changed_files.txt ]; then
-            echo "No changed files detected, exiting."
-            exit 0
-          fi
-
-      - name: Prepare scan directory (changed files only)
+      # 🔹 建立實際要掃描的目錄
+      - name: Prepare scan directory
         run: |
           set -eux
-
-          SCAN_DIR="${{ github.workspace }}/changed-scan"
-          mkdir -p "$SCAN_DIR"
 
           while read -r file; do
             if [ -f "$file" ]; then
-              mkdir -p "$SCAN_DIR/$(dirname "$file")"
-              cp "$file" "$SCAN_DIR/$file"
+              mkdir -p "_cortex_changed/$(dirname "$file")"
+              cp "$file" "_cortex_changed/$file"
             fi
-          done < changed_files.txt
+          done < changed_files.txt || true
 
-          echo "Files prepared for scan:"
-          find "$SCAN_DIR" -type f
+          FILE_COUNT=$(find _cortex_changed -type f | wc -l || true)
+          echo "Files prepared for scan: $FILE_COUNT"
+
+          if [ "$FILE_COUNT" -eq 0 ]; then
+            echo "No files to scan (deletions only). Creating placeholder."
+            echo "placeholder" > _cortex_changed/.cortex_placeholder
+          fi
+
+          find _cortex_changed -type f
 
       - name: Download cortexcli
         run: |
           set -eux
 
-          crtx_resp=$(curl "${CORTEX_API_URL}/public_api/v1/unified-cli/releases/download-link?os=linux&architecture=amd64" \
+          crtx_resp=$(curl -sS "${CORTEX_API_URL}/public_api/v1/unified-cli/releases/download-link?os=linux&architecture=amd64" \
             -H "x-xdr-auth-id: ${CORTEX_API_KEY_ID}" \
             -H "Authorization: ${CORTEX_API_KEY}")
 
           crtx_url=$(echo "$crtx_resp" | jq -r ".signed_url")
-          curl -o cortexcli "$crtx_url"
+          [ -z "$crtx_url" ] && exit 1
+
+          curl -sS -o cortexcli "$crtx_url"
           chmod +x cortexcli
           ./cortexcli --version
 
-      - name: Run Cortex CLI Code Scan (changed files)
+      - name: Run Cortex CLI Code Scan (changed files only)
         run: |
           set -eux
 
@@ -91,7 +124,7 @@ jobs:
             --api-key "${CORTEX_API_KEY}" \
             --api-key-id "${CORTEX_API_KEY_ID}" \
             code scan \
-            --directory "${{ github.workspace }}/changed-scan" \
+            --directory "${{ github.workspace }}/_cortex_changed" \
             --repo-id "${{ github.repository }}" \
             --branch "${{ github.ref_name }}" \
             --source "GITHUB_ACTIONS" \
@@ -100,7 +133,6 @@ jobs:
             --output sarif \
             --output-file-path "$OUTPUT_PATH"
 
-          ls -al "${{ github.workspace }}"
           test -f "$OUTPUT_PATH"
 
       - name: Upload SARIF to GitHub Security
