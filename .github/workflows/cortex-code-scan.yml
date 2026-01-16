@@ -98,21 +98,19 @@ jobs:
 
           find _cortex_changed -type f
 
-      # 🔴 [新增] 依照 Support 要求，在下載前先清除相關資料夾
+      # 🔴 [新增 1] 依照 Support 要求，在下載前先清除相關資料夾
+      # 目的：避免舊的 APPSEC 模組殘留導致版本衝突
       - name: Clean Cortex CLI Config (Support Request)
         run: |
           set -eux
           echo "Performing clean reset as requested by support..."
-          # Support 要求執行的刪除指令
           rm -rf ~/.cortexcli/APPSEC
-          
-          # 註：Support 提到的 'cortexcli clean' 無法在此執行，因為工具尚未下載。
-          # 但刪除 APPSEC 資料夾應該已足夠解決版本衝突問題。
 
       - name: Download cortexcli
         run: |
           set -eux
 
+          # 下載 CLI 工具
           crtx_resp=$(curl -sS "${CORTEX_API_URL}/public_api/v1/unified-cli/releases/download-link?os=linux&architecture=amd64" \
             -H "x-xdr-auth-id: ${CORTEX_API_KEY_ID}" \
             -H "Authorization: ${CORTEX_API_KEY}")
@@ -122,7 +120,19 @@ jobs:
 
           curl -sS -o cortexcli "$crtx_url"
           chmod +x cortexcli
+          
+          # 執行基礎版本檢查
           ./cortexcli --version
+
+          # 🔴 [新增 2] 依照松倫要求，檢查 APPSEC 模組狀況
+          # 因為 ./cortexcli 是檔案不是資料夾，不能用他原本的路徑
+          # 改為檢查家目錄下的設定檔，若有更新，時間戳記會是新的
+          echo "=== Checking APPSEC module details for verification ==="
+          if [ -d "$HOME/.cortexcli/APPSEC" ]; then
+             ls -lR "$HOME/.cortexcli/APPSEC"
+          else
+             echo "APPSEC directory not created yet (it will be created during the scan step)."
+          fi
 
       - name: Run Cortex CLI Code Scan (changed files only)
         run: |
