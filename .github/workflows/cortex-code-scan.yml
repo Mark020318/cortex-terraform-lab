@@ -142,19 +142,21 @@ jobs:
 
           test -f "$OUTPUT_PATH"
 
-      # 🟢 [松倫要求] 掃描完成後，顯示 APPSEC 版本以供驗證
-      # 放在這裡是因爲模組要等上面 "code scan" 跑完才會下載下來
-      - name: Check APPSEC Version (For Verification)
-        if: always() # 即使掃描失敗也要執行，方便除錯
+      # 🟢 [修改] 讀取 version.json 以顯示具體版號給松倫看
+      - name: Check APPSEC Version (Show version.json)
+        if: always() 
         run: |
           set -eux
-          echo "=== APPSEC Module Details ==="
-          # 顯示檔案詳細資訊 (日期/大小)
+          echo "=== APPSEC Module File Details ==="
           ls -l ~/.cortexcli/APPSEC || true
           
-          echo "=== APPSEC Version Output ==="
-          # 嘗試執行版本指令
-          ~/.cortexcli/APPSEC --version || echo "File exists but could not run --version directly."
+          echo "=== Reading version.json content ==="
+          # 直接印出 JSON 檔案內容，這樣就能看到具體版本號
+          if [ -f ~/.cortexcli/APPSEC/version.json ]; then
+            cat ~/.cortexcli/APPSEC/version.json
+          else
+            echo "version.json not found."
+          fi
 
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
