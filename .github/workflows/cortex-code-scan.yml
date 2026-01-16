@@ -54,7 +54,7 @@ jobs:
               resp=$(curl -sS -H "Authorization: Bearer ${GH_TOKEN}" \
                 -H "Accept: application/vnd.github+json" \
                 "https://api.github.com/repos/${OWNER_REPO}/pulls/${PR_NUMBER}/files?per_page=100&page=${page}")
-
+              
               count=$(echo "$resp" | jq 'length')
               [ "$count" -eq 0 ] && break
 
@@ -64,7 +64,7 @@ jobs:
 
           else
             echo "Push / manual event detected"
-
+            
             if git rev-parse HEAD~1 >/dev/null 2>&1; then
               git diff --name-only HEAD~1 HEAD > changed_files.txt
             else
@@ -97,6 +97,17 @@ jobs:
           fi
 
           find _cortex_changed -type f
+
+      # 🔴 [新增] 依照 Support 要求，在下載前先清除相關資料夾
+      - name: Clean Cortex CLI Config (Support Request)
+        run: |
+          set -eux
+          echo "Performing clean reset as requested by support..."
+          # Support 要求執行的刪除指令
+          rm -rf ~/.cortexcli/APPSEC
+          
+          # 註：Support 提到的 'cortexcli clean' 無法在此執行，因為工具尚未下載。
+          # 但刪除 APPSEC 資料夾應該已足夠解決版本衝突問題。
 
       - name: Download cortexcli
         run: |
