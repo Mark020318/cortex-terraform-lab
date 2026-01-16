@@ -98,19 +98,17 @@ jobs:
 
           find _cortex_changed -type f
 
-      # 🔴 [新增 1] 依照 Support 要求，在下載前先清除相關資料夾
-      # 目的：避免舊的 APPSEC 模組殘留導致版本衝突
+      # 🔴 [Support 要求] 確保環境乾淨，移除舊的 APPSEC 設定
       - name: Clean Cortex CLI Config (Support Request)
         run: |
           set -eux
-          echo "Performing clean reset as requested by support..."
+          echo "Performing clean reset..."
           rm -rf ~/.cortexcli/APPSEC
 
       - name: Download cortexcli
         run: |
           set -eux
 
-          # 下載 CLI 工具
           crtx_resp=$(curl -sS "${CORTEX_API_URL}/public_api/v1/unified-cli/releases/download-link?os=linux&architecture=amd64" \
             -H "x-xdr-auth-id: ${CORTEX_API_KEY_ID}" \
             -H "Authorization: ${CORTEX_API_KEY}")
@@ -120,19 +118,7 @@ jobs:
 
           curl -sS -o cortexcli "$crtx_url"
           chmod +x cortexcli
-          
-          # 執行基礎版本檢查
           ./cortexcli --version
-
-          # 🔴 [新增 2] 依照松倫要求，檢查 APPSEC 模組狀況
-          # 因為 ./cortexcli 是檔案不是資料夾，不能用他原本的路徑
-          # 改為檢查家目錄下的設定檔，若有更新，時間戳記會是新的
-          echo "=== Checking APPSEC module details for verification ==="
-          if [ -d "$HOME/.cortexcli/APPSEC" ]; then
-             ls -lR "$HOME/.cortexcli/APPSEC"
-          else
-             echo "APPSEC directory not created yet (it will be created during the scan step)."
-          fi
 
       - name: Run Cortex CLI Code Scan (changed files only)
         run: |
@@ -155,6 +141,20 @@ jobs:
             --output-file-path "$OUTPUT_PATH"
 
           test -f "$OUTPUT_PATH"
+
+      # 🟢 [松倫要求] 掃描完成後，顯示 APPSEC 版本以供驗證
+      # 放在這裡是因爲模組要等上面 "code scan" 跑完才會下載下來
+      - name: Check APPSEC Version (For Verification)
+        if: always() # 即使掃描失敗也要執行，方便除錯
+        run: |
+          set -eux
+          echo "=== APPSEC Module Details ==="
+          # 顯示檔案詳細資訊 (日期/大小)
+          ls -l ~/.cortexcli/APPSEC || true
+          
+          echo "=== APPSEC Version Output ==="
+          # 嘗試執行版本指令
+          ~/.cortexcli/APPSEC --version || echo "File exists but could not run --version directly."
 
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
