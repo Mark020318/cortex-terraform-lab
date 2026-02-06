@@ -6,7 +6,7 @@ on:
       - main
   pull_request:
   workflow_dispatch:
-  
+
 env:
   CORTEX_API_KEY_ID: ${{ secrets.CORTEX_API_KEY_ID }}
   CORTEX_API_KEY: ${{ secrets.CORTEX_API_KEY_SECRET }}
