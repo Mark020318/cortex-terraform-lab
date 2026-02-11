@@ -8,9 +8,12 @@ on:
   workflow_dispatch:
 
 env:
+  # 🟢 修正 1：直接使用台灣區的 API URL (參考官方範例)
+  CORTEX_API_URL: https://api-twes.xdr.tw.paloaltonetworks.com
+  
+  # 請確認你的 Github Secrets 名稱是否與這裡一致
   CORTEX_API_KEY_ID: ${{ secrets.CORTEX_API_KEY_ID }}
-  CORTEX_API_KEY: ${{ secrets.CORTEX_API_KEY_SECRET }}
-  CORTEX_API_URL: ${{ secrets.CORTEX_API_BASE_URL }}
+  CORTEX_API_KEY: ${{ secrets.CORTEX_API_KEY_SECRET }} 
 
 jobs:
   cortex-code-scan:
@@ -25,7 +28,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0   # 必須，否則抓不到 diff
 
       - name: Install jq
         run: |
@@ -33,14 +36,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      # 🔹 依事件類型收集「變動檔案清單」
+      # 🔹 依事件類型收集「變動檔案清單」 (保留你的邏輯)
       - name: Collect changed files
         id: changes
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eux
-
           mkdir -p _cortex_changed
           rm -f changed_files.txt
 
@@ -48,23 +50,18 @@ jobs:
             echo "PR event detected"
             PR_NUMBER="${{ github.event.pull_request.number }}"
             OWNER_REPO="${{ github.repository }}"
-
             page=1
             while true; do
               resp=$(curl -sS -H "Authorization: Bearer ${GH_TOKEN}" \
                 -H "Accept: application/vnd.github+json" \
                 "https://api.github.com/repos/${OWNER_REPO}/pulls/${PR_NUMBER}/files?per_page=100&page=${page}")
-              
               count=$(echo "$resp" | jq 'length')
               [ "$count" -eq 0 ] && break
-
               echo "$resp" | jq -r '.[].filename' >> changed_files.txt
               page=$((page+1))
             done
-
           else
             echo "Push / manual event detected"
-            
             if git rev-parse HEAD~1 >/dev/null 2>&1; then
               git diff --name-only HEAD~1 HEAD > changed_files.txt
             else
@@ -80,41 +77,47 @@ jobs:
       - name: Prepare scan directory
         run: |
           set -eux
-
           while read -r file; do
             if [ -f "$file" ]; then
               mkdir -p "_cortex_changed/$(dirname "$file")"
               cp "$file" "_cortex_changed/$file"
             fi
           done < changed_files.txt || true
-
+          
           FILE_COUNT=$(find _cortex_changed -type f | wc -l || true)
           echo "Files prepared for scan: $FILE_COUNT"
-
+          
           if [ "$FILE_COUNT" -eq 0 ]; then
-            echo "No files to scan (deletions only). Creating placeholder."
+            echo "No files to scan. Creating placeholder."
             echo "placeholder" > _cortex_changed/.cortex_placeholder
           fi
 
-          find _cortex_changed -type f
-
-      # 🔴 [新增重點 1] 在下載工具前，先執行環境重置 (原廠建議優化)
-      - name: Clean Cortex CLI Config (Recommended Optimization)
+      # 🔴 [Support 要求] 確保環境乾淨
+      - name: Clean Cortex CLI Config
         run: |
           set -eux
-          echo "Performing clean reset for optimization..."
           rm -rf ~/.cortexcli/APPSEC
 
+      # 🟢 修正 2：下載步驟使用官方建議的參數與 URL
       - name: Download cortexcli
         run: |
           set -eux
+          
+          # 檢查變數是否到位
+          if [ -z "${CORTEX_API_URL}" ]; then echo "Error: API URL is missing"; exit 1; fi
+
+          echo "Downloading from: ${CORTEX_API_URL}"
 
           crtx_resp=$(curl -sS "${CORTEX_API_URL}/public_api/v1/unified-cli/releases/download-link?os=linux&architecture=amd64" \
             -H "x-xdr-auth-id: ${CORTEX_API_KEY_ID}" \
             -H "Authorization: ${CORTEX_API_KEY}")
 
           crtx_url=$(echo "$crtx_resp" | jq -r ".signed_url")
-          [ -z "$crtx_url" ] && exit 1
+
+          if [ "$crtx_url" = "null" ] || [ -z "$crtx_url" ]; then
+            echo "Error: Failed to get signed URL. Response: $crtx_resp"
+            exit 1
+          fi
 
           curl -sS -o cortexcli "$crtx_url"
           chmod +x cortexcli
@@ -123,7 +126,6 @@ jobs:
       - name: Run Cortex CLI Code Scan (changed files only)
         run: |
           set -eux
-
           OUTPUT_PATH="${{ github.workspace }}/result.sarif"
 
           ./cortexcli \
@@ -142,15 +144,11 @@ jobs:
 
           test -f "$OUTPUT_PATH"
 
-      # 🟢 [新增重點 2] 驗證 APPSEC 模組狀態，確認優化生效
+      # 🟢 顯示版本資訊
       - name: Check APPSEC Version (Show version.json)
-        if: always() 
+        if: always()
         run: |
           set -eux
-          echo "=== APPSEC Module File Details ==="
-          ls -l ~/.cortexcli/APPSEC || true
-          
-          echo "=== Reading version.json content ==="
           if [ -f ~/.cortexcli/APPSEC/version.json ]; then
             cat ~/.cortexcli/APPSEC/version.json
           else
