@@ -1,0 +1,71 @@
+name: Cortex CLI Code Scan (Full Scan)
+
+on:
+  push:
+    branches:
+      - '**'        # 任何分支 Push 都會跑
+  pull_request:     # 開 PR 也會跑
+  workflow_dispatch: # 允許手動執行
+
+env:
+  # 1. 設定台灣區 API
+  CORTEX_API_URL: https://api-twes.xdr.tw.paloaltonetworks.com
+  
+  # GitHub Secrets
+  CORTEX_API_KEY_ID: ${{ secrets.CORTEX_API_KEY_ID }}
+  CORTEX_API_KEY: ${{ secrets.CORTEX_API_KEY_SECRET }}
+
+jobs:
+  cortex-code-scan:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: read
+      security-events: write
+      actions: read        # 🟢 補上這個權限避免報錯
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        # 全量掃描不需要 fetch-depth: 0，預設只抓最新版即可，速度更快
+
+      # 清除舊設定 (Support 建議)
+      - name: Clean Cortex CLI Config
+        run: |
+          rm -rf ~/.cortexcli/APPSEC
+
+      - name: Download cortexcli
+        run: |
+          set -eux
+          # 使用 env 中的正確網址
+          crtx_resp=$(curl -sS "${CORTEX_API_URL}/public_api/v1/unified-cli/releases/download-link?os=linux&architecture=amd64" \
+            -H "x-xdr-auth-id: ${CORTEX_API_KEY_ID}" \
+            -H "Authorization: ${CORTEX_API_KEY}")
+
+          crtx_url=$(echo "$crtx_resp" | jq -r ".signed_url")
+          
+          if [ -z "$crtx_url" ] || [ "$crtx_url" = "null" ]; then
+            echo "Error: Failed to get signed URL"
+            exit 1
+          fi
+
+          curl -sS -o cortexcli "$crtx_url"
+          chmod +x cortexcli
+
+      # 🟢 執行全量掃描 (直接掃描當前目錄)
+      - name: Run Cortex CLI Code Scan (Full)
+        run: |
+          set -eux
+          
+          ./cortexcli \
+            --api-base-url "${CORTEX_API_URL}" \
+            --api-key "${CORTEX_API_KEY}" \
+            --api-key-id "${CORTEX_API_KEY_ID}" \
+            code scan \
+            --directory "." \
+            --repo-id "${{ github.repository }}" \
+            --branch "${{ github.ref_name }}" \
+            --source "GITHUB_ACTIONS" \
+            --create-repo-if-missing \
+            --upload-mode upload 
