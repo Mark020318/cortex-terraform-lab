@@ -3,7 +3,7 @@ name: Cortex CLI Code Scan (Changed Files Only)
 on:
   push:
     branches:
-      - '**'
+      - main
   pull_request:
   workflow_dispatch:
 
