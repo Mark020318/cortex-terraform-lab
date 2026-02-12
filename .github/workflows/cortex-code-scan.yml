@@ -1,4 +1,4 @@
-name: Cortex CLI Code Scan (changed files only)
+name: Cortex CLI Code Scan (Changed Files Only)
 
 on:
   push:
@@ -8,9 +8,12 @@ on:
   workflow_dispatch:
 
 env:
+  # 🟢 1. 使用官方範例中的台灣區 API 網址
+  CORTEX_API_URL: https://api-twes.xdr.tw.paloaltonetworks.com
+  
+  # GitHub Secrets
   CORTEX_API_KEY_ID: ${{ secrets.CORTEX_API_KEY_ID }}
   CORTEX_API_KEY: ${{ secrets.CORTEX_API_KEY_SECRET }}
-  CORTEX_API_URL: ${{ secrets.CORTEX_API_BASE_URL }}
 
 jobs:
   cortex-code-scan:
@@ -25,7 +28,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # 必須，否則抓不到 diff
+          fetch-depth: 0   # ⚠️ 必須設為 0，否則 git diff 抓不到歷史紀錄
 
       - name: Install jq
         run: |
@@ -33,14 +36,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      # 🔹 依事件類型收集「變動檔案清單」
+      # 🟢 2. 找出哪些檔案被修改了
       - name: Collect changed files
         id: changes
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eux
-
           mkdir -p _cortex_changed
           rm -f changed_files.txt
 
@@ -48,23 +50,21 @@ jobs:
             echo "PR event detected"
             PR_NUMBER="${{ github.event.pull_request.number }}"
             OWNER_REPO="${{ github.repository }}"
-
+            
+            # 透過 GitHub API 抓取 PR 的變更檔案 (支援分頁)
             page=1
             while true; do
               resp=$(curl -sS -H "Authorization: Bearer ${GH_TOKEN}" \
                 -H "Accept: application/vnd.github+json" \
                 "https://api.github.com/repos/${OWNER_REPO}/pulls/${PR_NUMBER}/files?per_page=100&page=${page}")
-              
               count=$(echo "$resp" | jq 'length')
               [ "$count" -eq 0 ] && break
-
               echo "$resp" | jq -r '.[].filename' >> changed_files.txt
               page=$((page+1))
             done
-
           else
-            echo "Push / manual event detected"
-            
+            echo "Push / Manual event detected"
+            # 比對這一次 Commit 與上一次 Commit 的差異
             if git rev-parse HEAD~1 >/dev/null 2>&1; then
               git diff --name-only HEAD~1 HEAD > changed_files.txt
             else
@@ -72,58 +72,61 @@ jobs:
             fi
           fi
 
+          # 去除重複並顯示
           sort -u changed_files.txt -o changed_files.txt || true
-          echo "Changed files:"
+          echo "=== Changed Files List ==="
           cat changed_files.txt || true
 
-      # 🔹 建立實際要掃描的目錄
+      # 🟢 3. 把變更的檔案複製到 _cortex_changed 資料夾
       - name: Prepare scan directory
         run: |
           set -eux
-
+          
+          # 讀取清單並複製檔案
           while read -r file; do
             if [ -f "$file" ]; then
+              # 保持目錄結構複製 (例如 src/main.js -> _cortex_changed/src/main.js)
               mkdir -p "_cortex_changed/$(dirname "$file")"
               cp "$file" "_cortex_changed/$file"
             fi
           done < changed_files.txt || true
 
+          # 檢查是否有檔案，如果沒有(例如只刪除檔案)，建立一個空檔案避免掃描器報錯
           FILE_COUNT=$(find _cortex_changed -type f | wc -l || true)
           echo "Files prepared for scan: $FILE_COUNT"
 
           if [ "$FILE_COUNT" -eq 0 ]; then
-            echo "No files to scan (deletions only). Creating placeholder."
+            echo "No files to scan. Creating placeholder."
             echo "placeholder" > _cortex_changed/.cortex_placeholder
           fi
 
-          find _cortex_changed -type f
-
-      # 🔴 [Support 要求] 確保環境乾淨，移除舊的 APPSEC 設定
-      - name: Clean Cortex CLI Config (Support Request)
+      # 清除舊設定 (Support 建議)
+      - name: Clean Cortex CLI Config
         run: |
-          set -eux
-          echo "Performing clean reset..."
           rm -rf ~/.cortexcli/APPSEC
 
       - name: Download cortexcli
         run: |
           set -eux
-
+          # 使用 env 中的正確網址
           crtx_resp=$(curl -sS "${CORTEX_API_URL}/public_api/v1/unified-cli/releases/download-link?os=linux&architecture=amd64" \
             -H "x-xdr-auth-id: ${CORTEX_API_KEY_ID}" \
             -H "Authorization: ${CORTEX_API_KEY}")
 
           crtx_url=$(echo "$crtx_resp" | jq -r ".signed_url")
-          [ -z "$crtx_url" ] && exit 1
+          
+          if [ -z "$crtx_url" ] || [ "$crtx_url" = "null" ]; then
+            echo "Error: Failed to get signed URL"
+            exit 1
+          fi
 
           curl -sS -o cortexcli "$crtx_url"
           chmod +x cortexcli
-          ./cortexcli --version
 
-      - name: Run Cortex CLI Code Scan (changed files only)
+      # 🟢 4. 執行掃描 (關鍵：指定 directory 為 _cortex_changed)
+      - name: Run Cortex CLI Code Scan (Incremental)
         run: |
           set -eux
-
           OUTPUT_PATH="${{ github.workspace }}/result.sarif"
 
           ./cortexcli \
@@ -142,20 +145,12 @@ jobs:
 
           test -f "$OUTPUT_PATH"
 
-      # 🟢 [修改] 讀取 version.json 以顯示具體版號給松倫看
-      - name: Check APPSEC Version (Show version.json)
-        if: always() 
+      # 除錯用：顯示版本
+      - name: Check APPSEC Version
+        if: always()
         run: |
-          set -eux
-          echo "=== APPSEC Module File Details ==="
-          ls -l ~/.cortexcli/APPSEC || true
-          
-          echo "=== Reading version.json content ==="
-          # 直接印出 JSON 檔案內容，這樣就能看到具體版本號
           if [ -f ~/.cortexcli/APPSEC/version.json ]; then
             cat ~/.cortexcli/APPSEC/version.json
-          else
-            echo "version.json not found."
           fi
 
       - name: Upload SARIF to GitHub Security
