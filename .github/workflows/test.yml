@@ -8,12 +8,13 @@ on:
   workflow_dispatch:
 
 env:
+  # 台灣區 API
   CORTEX_API_URL: https://api-twes.xdr.tw.paloaltonetworks.com
   CORTEX_API_KEY_ID: ${{ secrets.CORTEX_API_KEY_ID }}
   CORTEX_API_KEY: ${{ secrets.CORTEX_API_KEY_SECRET }}
 
 jobs:
-  # 🕵️‍♂️ 第一階段：自動探索有哪些資料夾
+  # Job 1: 自動探索有哪些資料夾
   discover-targets:
     runs-on: ubuntu-latest
     outputs:
@@ -48,13 +49,13 @@ jobs:
           # 4. 設定 Output 變數
           echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
 
-  # 🚀 第二階段：平行掃描 (接收上面的清單)
+  # Job 2: 平行掃描 (接收上面的清單)
   cortex-scan-dynamic:
     needs: discover-targets  # 必須等探索完成
     runs-on: ubuntu-latest
     
     strategy:
-      fail-fast: false
+      fail-fast: false # 讓彼此不互相影響，一個失敗其他繼續跑
       matrix:
         # 這裡會自動填入上面找到的清單，例如 ["src", "tf", "_ROOT_FILES_"]
         target: ${{ fromJson(needs.discover-targets.outputs.matrix) }}
@@ -91,7 +92,6 @@ jobs:
           curl -sS -o cortexcli "$crtx_url"
           chmod +x cortexcli
 
-      # 🟢 智慧掃描邏輯
       - name: Run Cortex CLI Code Scan
         run: |
           set -eux
@@ -100,8 +100,7 @@ jobs:
           
           if [ "$TARGET_NAME" == "_ROOT_FILES_" ]; then
             echo "處理根目錄散落檔案..."
-            # 💡 技巧：為了避免掃描根目錄時不小心又掃進去子資料夾 (造成重複與超時)
-            # 我們建立一個暫存資料夾，把根目錄的檔案「複製」進去掃描
+            # 建立暫存資料夾掃描根目錄檔案，避免重複掃描子資料夾
             mkdir -p _temp_root_scan
             find . -maxdepth 1 -type f -not -path '*/.*' -exec cp {} _temp_root_scan/ \;
             SCAN_DIR="_temp_root_scan"
@@ -111,7 +110,7 @@ jobs:
             SCAN_DIR="$TARGET_NAME"
           fi
           
-          # 執行掃描
+          # 執行掃描 (已移除 --scan-id-tag)
           ./cortexcli \
             --api-base-url "${CORTEX_API_URL}" \
             --api-key "${CORTEX_API_KEY}" \
@@ -122,5 +121,4 @@ jobs:
             --branch "${{ github.ref_name }}" \
             --source "GITHUB_ACTIONS" \
             --create-repo-if-missing \
-            --upload-mode upload \
-            --scan-id-tag "$TARGET_NAME"
+            --upload-mode upload
