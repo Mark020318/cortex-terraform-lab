@@ -110,7 +110,7 @@ jobs:
             SCAN_DIR="$TARGET_NAME"
           fi
           
-          # 執行掃描 (已移除 --scan-id-tag)
+          # 執行掃描
           ./cortexcli \
             --api-base-url "${CORTEX_API_URL}" \
             --api-key "${CORTEX_API_KEY}" \
