@@ -6,7 +6,7 @@
 # ✔ IAM Policy 過度授權
 # ✔ RDS 未強制加密
 # Cortex 一定會掃出問題，適合作為 Demo 檔案
-#12378
+#1237
 # 1. S3 bucket：未加密、開 public
 resource "aws_s3_bucket" "bad_bucket" {
   bucket = "terribly-insecure-demo-bucket"
