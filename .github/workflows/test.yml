@@ -1,4 +1,4 @@
-name: Cortex CLI Code Scan (Changed Files Only)
+name: Cortex CLI Code Scan (Changed Files Only And Log)
 
 on:
   push:
