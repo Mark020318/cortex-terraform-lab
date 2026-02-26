@@ -1,0 +1,10 @@
+{
+  "name": "cortex-vulnerable-app",
+  "version": "1.0.0",
+  "description": "Trigger SCA issues",
+  "dependencies": {
+    "lodash": "4.17.10",
+    "request": "2.88.2",
+    "gpl-3.0": "1.0.0"
+  }
+}
