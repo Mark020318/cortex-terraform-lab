@@ -1,0 +1,18 @@
+name: Insecure CI Pipeline
+
+# 觸發 CI/CD Risks: 不安全的權限與觸發條件
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2 # 使用過舊的 Action 版本
+
+      - name: Print PR title
+        # 觸發 CI/CD Risks: Script Injection 風險
+        run: |
+          echo "Building PR: ${{ github.event.pull_request.title }}"
