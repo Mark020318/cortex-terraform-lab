@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
 
 env:
-  CORTEX_API_URL: https://api-edison-so-handsome.xdr.us.paloaltonetworks.com
-  
+  CORTEX_API_URL: ${{ secrets.CORTEX_API_BASE_URL }}
+
   # GitHub Secrets
   CORTEX_API_KEY_ID: ${{ secrets.CORTEX_API_KEY_ID }}
   CORTEX_API_KEY: ${{ secrets.CORTEX_API_KEY_SECRET }}
