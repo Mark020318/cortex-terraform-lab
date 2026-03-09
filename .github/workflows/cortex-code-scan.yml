@@ -1,4 +1,4 @@
-name: Cortex CLI Code Scan (Changed Files Only)
+name: Cortex CLI Code Scan (Changed Files Only And Log)
 
 on:
   push:
@@ -123,13 +123,14 @@ jobs:
           curl -sS -o cortexcli "$crtx_url"
           chmod +x cortexcli
 
-      # 🟢 4. 執行掃描 (關鍵：指定 directory 為 _cortex_changed)
+      # 🟢 4. 執行掃描 (關鍵：已加上 --log-level DEBUG)
       - name: Run Cortex CLI Code Scan (Incremental)
         run: |
           set -eux
           OUTPUT_PATH="${{ github.workspace }}/result.sarif"
 
           ./cortexcli \
+            --log-level DEBUG \
             --api-base-url "${CORTEX_API_URL}" \
             --api-key "${CORTEX_API_KEY}" \
             --api-key-id "${CORTEX_API_KEY_ID}" \
