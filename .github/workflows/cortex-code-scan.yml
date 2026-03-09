@@ -9,7 +9,7 @@ on:
 
 env:
   # 🟢 1. 使用官方範例中的台灣區 API 網址
-  CORTEX_API_URL: https://api-edison-so-handsome.xdr.us.paloaltonetworks.com
+  CORTEX_API_URL: ${{ secrets.CORTEX_API_BASE_URL }}
   
   # GitHub Secrets
   CORTEX_API_KEY_ID: ${{ secrets.CORTEX_API_KEY_ID }}
