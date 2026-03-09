@@ -1,0 +1,88 @@
+name: Cortex CLI Code Scan (Full Scan)
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CORTEX_API_URL: https://api-edison-so-handsome.xdr.us.paloaltonetworks.com
+  
+  # GitHub Secrets
+  CORTEX_API_KEY_ID: ${{ secrets.CORTEX_API_KEY_ID }}
+  CORTEX_API_KEY: ${{ secrets.CORTEX_API_KEY_SECRET }}
+
+jobs:
+  cortex-code-scan:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: read
+      security-events: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1   # 全掃描只需要最新的 commit 即可
+
+      # 清除舊設定
+      - name: Clean Cortex CLI Config
+        run: |
+          rm -rf ~/.cortexcli/APPSEC
+
+      - name: Download cortexcli
+        run: |
+          set -eux
+          crtx_resp=$(curl -sS "${CORTEX_API_URL}/public_api/v1/unified-cli/releases/download-link?os=linux&architecture=amd64" \
+            -H "x-xdr-auth-id: ${CORTEX_API_KEY_ID}" \
+            -H "Authorization: ${CORTEX_API_KEY}")
+
+          crtx_url=$(echo "$crtx_resp" | jq -r ".signed_url")
+          
+          if [ -z "$crtx_url" ] || [ "$crtx_url" = "null" ]; then
+            echo "Error: Failed to get signed URL"
+            exit 1
+          fi
+
+          curl -sS -o cortexcli "$crtx_url"
+          chmod +x cortexcli
+
+      # 🟢 關鍵修改：直接掃描整個 github.workspace，不再使用 _cortex_changed
+      - name: Run Cortex CLI Code Scan (Full)
+        run: |
+          set -eux
+          OUTPUT_PATH="${{ github.workspace }}/result.sarif"
+
+          ./cortexcli \
+            --log-level DEBUG \
+            --api-base-url "${CORTEX_API_URL}" \
+            --api-key "${CORTEX_API_KEY}" \
+            --api-key-id "${CORTEX_API_KEY_ID}" \
+            code scan \
+            --directory "${{ github.workspace }}" \
+            --repo-id "${{ github.repository }}" \
+            --branch "${{ github.ref_name }}" \
+            --source "GITHUB_ACTIONS" \
+            --create-repo-if-missing \
+            --upload-mode upload \
+            --output sarif \
+            --output-file-path "$OUTPUT_PATH"
+
+          test -f "$OUTPUT_PATH"
+
+      # 除錯用：顯示版本
+      - name: Check APPSEC Version
+        if: always()
+        run: |
+          if [ -f ~/.cortexcli/APPSEC/version.json ]; then
+            cat ~/.cortexcli/APPSEC/version.json
+          fi
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: result.sarif
