@@ -63,7 +63,7 @@ jobs:
             --api-key "${CORTEX_API_KEY}" \
             --api-key-id "${CORTEX_API_KEY_ID}" \
             code scan \
-            --directory "/home/runner/work/cortex-terraform-lab/cortex-terraform-lab" \
+            --directory "${{github.workspace}}" \
             --repo-id "${{ github.repository }}" \
             --branch "${{ github.ref_name }}" \
             --source "GITHUB_ACTIONS" \
