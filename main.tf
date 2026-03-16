@@ -5,3 +5,4 @@ resource "aws_s3_bucket" "bad_bucket" {
   bucket = "mark-terraform-lab-demo-bucket"
   acl    = "public-read"  # 公開讀取，等一下掃描會被判定為高風險
 }
+#test
